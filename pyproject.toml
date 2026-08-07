@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qste"
+dynamic = ["version"]
+description = "True-binary training for PyTorch models. Training precision is inference precision."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "BleedingXiko", email = "66162192+BleedingXiko@users.noreply.github.com" }]
+keywords = [
+    "pytorch",
+    "quantization",
+    "binary-neural-networks",
+    "binarization",
+    "low-precision",
+    "training",
+    "deep-learning",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
+dependencies = ["torch>=2.1"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "numpy>=1.21"]
+
+[project.urls]
+Homepage = "https://github.com/BleedingXiko/QSTE"
+Repository = "https://github.com/BleedingXiko/QSTE"
+Issues = "https://github.com/BleedingXiko/QSTE/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.dynamic]
+version = { attr = "qste.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"qste.kernels" = ["*.cpp", "*.cu"]
+"qste" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: spawns real processes or trains a model"]
+filterwarnings = ["ignore::RuntimeWarning"]

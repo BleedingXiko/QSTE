@@ -1,0 +1,45 @@
+"""Kernel layer. Import :mod:`qste.kernels` and call; dispatch is automatic."""
+
+from .device import DeviceProfile, profile, warm
+from .loader import (
+    apply_bits,
+    cuda_available,
+    cuda_backend,
+    coordinate_update,
+    evidence_from_packed,
+    native_available,
+    pack_bits,
+    pack_coordinate,
+    pack_affine_rows,
+    packed_embedding,
+    packed_linear_affine,
+    packed_row_inner,
+    packed_transpose,
+    status,
+    unpack_bits,
+    unpack_rows,
+    warn_if_slow,
+)
+
+__all__ = [
+    "DeviceProfile",
+    "apply_bits",
+    "coordinate_update",
+    "cuda_available",
+    "cuda_backend",
+    "evidence_from_packed",
+    "native_available",
+    "pack_bits",
+    "pack_coordinate",
+    "pack_affine_rows",
+    "packed_embedding",
+    "packed_linear_affine",
+    "packed_row_inner",
+    "packed_transpose",
+    "profile",
+    "status",
+    "unpack_bits",
+    "unpack_rows",
+    "warm",
+    "warn_if_slow",
+]
