@@ -6,6 +6,16 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-08-17
+
+### Fixed
+- `packed_activations()` now follows `convert(..., include=...)`: functional
+  activations are packed only when their input is the direct output of a
+  converted QSTE layer. Functional activations on unconverted paths remain
+  ordinary PyTorch operations.
+- Packed activation encodings now accept rank-zero tensors when a converted
+  path intentionally feeds a scalar activation.
+
 ## [0.1.0] — 2026-08-16
 
 First public release. Beta: the API is stable and the test suite is thorough.
@@ -27,5 +37,6 @@ has actually run" for the exact scope.
 - Distributed support (DDP evidence reduction, FSDP ignored-states helper).
 - `bench/bench.py` and `tools/bundle_cell.py`.
 
-[Unreleased]: https://github.com/BleedingXiko/QSTE/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/BleedingXiko/QSTE/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/BleedingXiko/QSTE/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/BleedingXiko/QSTE/releases/tag/v0.1.0

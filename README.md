@@ -173,10 +173,15 @@ with qste.packed_activations():
 loss.backward()
 ```
 
-This covers **any elementwise activation**, including ones QSTE has never heard
-of. For a function it has no closed-form derivative for, it runs the function
-once on a detached probe, takes the derivative from autograd, and quantizes
-that — one byte per element for anything shaped like `f(x)`:
+The context is selective: it packs a functional activation only when its input
+is the direct output of a converted QSTE layer. Activations elsewhere in a
+mixed model continue through ordinary PyTorch untouched, so `include=` governs
+both the binary weights and their functional activation tapes.
+
+For an explicitly selected elementwise function QSTE has no closed-form
+derivative for, use `qste.nn.elementwise` or `qste.nn.packed`. It runs the
+function once on a detached probe, takes the derivative from autograd, and
+quantizes that — one byte per element for anything shaped like `f(x)`:
 
 ```python
 qste.nn.elementwise(lambda t: t * torch.tanh(F.softplus(t)), x)

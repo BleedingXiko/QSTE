@@ -20,8 +20,9 @@ Everything not named in ``include`` keeps training in float. Nothing else in
 the host framework changes.
 
 Choosing that subset is the decision that matters -- see the README's "What to
-convert". Wrap the forward in :func:`packed_activations` too, so the retained
-activations shrink along with the weights.
+convert". Wrap the forward in :func:`packed_activations` too; it packs
+functional activations directly following converted layers and leaves every
+unconverted path untouched.
 
 Beta. Speed is measured on CPU and one GPU; the README states the scope.
 """
@@ -57,7 +58,7 @@ from .capture import (
 from .optim import QSTEOptimizer
 from .surface import Surface
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Candidate",

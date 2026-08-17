@@ -35,6 +35,10 @@ and for models that call the functional forms instead of holding modules::
         loss = model(batch)
     loss.backward()
 
+The context packs only activations whose input is the direct output of a
+converted QSTE layer. Functional activations elsewhere in a mixed model remain
+ordinary PyTorch operations.
+
 Everything here is device-agnostic: it is written against the kernel dispatch
 layer, so it runs native on CPU, native on GPU, and on the pure-torch reference
 path anywhere else.
@@ -57,6 +61,8 @@ from . import kernels
 # `F.gelu` and `F.silu` for the wrappers below, and those wrappers have to be
 # able to call the real thing for the forward value -- otherwise the patch makes
 # the activation call itself.
+_TORCH_RELU = F.relu
+_TORCH_RELU6 = F.relu6
 _TORCH_GELU = F.gelu
 _TORCH_SILU = F.silu
 _TORCH_LEAKY_RELU = F.leaky_relu
@@ -68,6 +74,8 @@ _TORCH_SELU = F.selu
 _TORCH_CELU = F.celu
 _TORCH_SOFTPLUS = F.softplus
 _TORCH_MISH = F.mish
+_TORCH_DROPOUT = F.dropout
+_TORCH_TORCH_RELU = torch.relu
 
 _SQRT_2 = math.sqrt(2.0)
 _SQRT_2_OVER_PI = math.sqrt(2.0 / math.pi)
@@ -78,10 +86,26 @@ _TANH_COEFFICIENT = 0.044715
 def _flatten(value: Tensor) -> tuple[Tensor, tuple[int, ...], int]:
     """Rank-2 view over the last dimension. Packing is per row."""
 
+    if value.ndim == 0:
+        # A scalar (e.g. a learned per-tensor gain flowing through a packed
+        # activation) has no last dimension. Treat it as a 1x1 row so packing,
+        # the row scale, and the backward reshape all still apply.
+        return value.reshape(1, 1).contiguous(), value.shape, 1
     if value.ndim == 1:
         return value.reshape(1, -1).contiguous(), value.shape, value.shape[0]
     columns = value.shape[-1]
     return value.reshape(-1, columns).contiguous(), value.shape, columns
+
+
+def _mark_activation_input(value: Tensor) -> Tensor:
+    """Tag a converted layer's ordinary Tensor output without propagating it."""
+
+    value._qste_activation_input = True
+    return value
+
+
+def _take_activation_input(value: Tensor) -> Tensor | None:
+    return value if getattr(value, "_qste_activation_input", False) else None
 
 
 # ---------------------------------------------------------------------------
@@ -804,25 +828,73 @@ def replace(module: nn.Module) -> nn.Module | None:
 # ---------------------------------------------------------------------------
 
 
+def _select_converted(original, packed):
+    """Use ``packed`` only for a value emitted directly by a QSTE module."""
+
+    def selected(inputs: Tensor, *args, **kwargs) -> Tensor:
+        marked = _take_activation_input(inputs)
+        return original(inputs, *args, **kwargs) if marked is None else packed(
+            marked, *args, **kwargs
+        )
+
+    return selected
+
+
+def _packed_relu(inputs: Tensor, inplace: bool = False) -> Tensor:
+    return _TORCH_RELU(inputs, True) if inplace else relu(inputs)
+
+
+def _packed_relu6(inputs: Tensor, inplace: bool = False) -> Tensor:
+    return _TORCH_RELU6(inputs, True) if inplace else relu6(inputs)
+
+
+def _packed_silu(inputs: Tensor, inplace: bool = False) -> Tensor:
+    return _TORCH_SILU(inputs, True) if inplace else silu(inputs)
+
+
+def _packed_dropout(inputs: Tensor, p: float = 0.5, training: bool = True,
+                    inplace: bool = False) -> Tensor:
+    return _TORCH_DROPOUT(inputs, p, training, True) if inplace else dropout(
+        inputs, p, training
+    )
+
+
+_context_relu = _select_converted(_TORCH_RELU, _packed_relu)
+_context_relu6 = _select_converted(_TORCH_RELU6, _packed_relu6)
+_context_leaky_relu = _select_converted(_TORCH_LEAKY_RELU, leaky_relu)
+_context_hardtanh = _select_converted(_TORCH_HARDTANH, hardtanh)
+_context_hardsigmoid = _select_converted(_TORCH_HARDSIGMOID, hardsigmoid)
+_context_torch_relu = _select_converted(_TORCH_TORCH_RELU, relu)
+_context_gelu = _select_converted(_TORCH_GELU, gelu)
+_context_silu = _select_converted(_TORCH_SILU, _packed_silu)
+_context_elu = _select_converted(_TORCH_ELU, elu)
+_context_celu = _select_converted(_TORCH_CELU, celu)
+_context_selu = _select_converted(_TORCH_SELU, selu)
+_context_softplus = _select_converted(_TORCH_SOFTPLUS, softplus)
+_context_mish = _select_converted(_TORCH_MISH, mish)
+_context_hardswish = _select_converted(_TORCH_HARDSWISH, hardswish)
+_context_dropout = _select_converted(_TORCH_DROPOUT, _packed_dropout)
+
+
 _PATCHES = (
     # One bit per element.
-    (F, "relu", relu),
-    (F, "relu6", relu6),
-    (F, "leaky_relu", leaky_relu),
-    (F, "hardtanh", hardtanh),
-    (F, "hardsigmoid", hardsigmoid),
-    (torch, "relu", relu),
+    (F, "relu", _context_relu),
+    (F, "relu6", _context_relu6),
+    (F, "leaky_relu", _context_leaky_relu),
+    (F, "hardtanh", _context_hardtanh),
+    (F, "hardsigmoid", _context_hardsigmoid),
+    (torch, "relu", _context_torch_relu),
     # Int8 derivative.
-    (F, "gelu", gelu),
-    (F, "silu", silu),
-    (F, "elu", elu),
-    (F, "celu", celu),
-    (F, "selu", selu),
-    (F, "softplus", softplus),
-    (F, "mish", mish),
-    (F, "hardswish", hardswish),
+    (F, "gelu", _context_gelu),
+    (F, "silu", _context_silu),
+    (F, "elu", _context_elu),
+    (F, "celu", _context_celu),
+    (F, "selu", _context_selu),
+    (F, "softplus", _context_softplus),
+    (F, "mish", _context_mish),
+    (F, "hardswish", _context_hardswish),
     # Its own mask.
-    (F, "dropout", dropout),
+    (F, "dropout", _context_dropout),
 )
 # `torch.sigmoid` and `torch.tanh` stay unpatched. They are general
 # mathematical functions, not activation entry points: a gating term, a
@@ -833,19 +905,21 @@ _PATCHES = (
 
 @contextmanager
 def packed_activations():
-    """Route functional activation calls through the packed implementations.
+    """Pack functional activations directly following converted QSTE layers.
 
     ``convert`` can only reach activations a model holds as submodules. Plenty
     of code writes ``F.gelu(x)`` inline instead, and those call sites cannot be
-    found by walking the module tree. Wrapping the forward pass covers them::
+    found by walking the module tree. Converted layers tag their output tensors,
+    and wrapping the forward lets these call sites consume that tag::
 
         with qste.packed_activations():
             loss = model(batch).mean()
         loss.backward()
 
-    Scoped and restored on the way out, including on an exception. In-place
-    variants (``F.relu_``) are left alone, since they cannot retain what they
-    overwrite, and a model using those keeps torch's behaviour for them.
+    An activation whose input did not come directly from a converted layer is
+    routed to the original PyTorch function unchanged. The patch is scoped and
+    restored on the way out, including on an exception. In-place variants
+    (``F.relu_``) are left alone, since they cannot retain what they overwrite.
     """
 
     saved = [(owner, name, getattr(owner, name)) for owner, name, _ in _PATCHES]

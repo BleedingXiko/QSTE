@@ -344,9 +344,51 @@ def test_packed_activations_restores_torch_even_on_an_exception():
     original = (F.relu, F.gelu, F.silu, F.dropout, torch.relu)
     with pytest.raises(RuntimeError):
         with qste.packed_activations():
-            assert F.relu is qnn.relu
+            assert F.relu is not original[0]
             raise RuntimeError("boom")
     assert (F.relu, F.gelu, F.silu, F.dropout, torch.relu) == original
+
+
+def test_packed_activations_leaves_unconverted_functionals_untouched():
+    """The context is selective: ordinary host-model activations stay native."""
+
+    mine = torch.tensor(-0.4, requires_grad=True)
+    theirs = mine.detach().clone().requires_grad_(True)
+    with qste.packed_activations():
+        ours = F.softplus(mine)
+    reference = F.softplus(theirs)
+    ours.backward()
+    reference.backward()
+    assert torch.equal(ours, reference)
+    assert torch.equal(mine.grad, theirs.grad)
+    assert type(ours.grad_fn).__name__ == "SoftplusBackward0"
+
+
+def test_packed_activations_selects_only_converted_layer_outputs():
+    converted = nn.Sequential(nn.Linear(8, 8, bias=False))
+    ordinary = nn.Linear(8, 8, bias=False)
+    qste.convert(converted, activations=False)
+    inputs = torch.randn(4, 8, requires_grad=True)
+
+    with qste.packed_activations():
+        packed = F.relu(converted(inputs)).square()
+        native = F.relu(ordinary(inputs)).square()
+
+    assert type(packed.grad_fn).__name__ == "_ReluSquareFnBackward"
+    assert type(native.grad_fn).__name__ == "PowBackward0"
+    (packed.sum() + native.sum()).backward()
+    assert torch.isfinite(inputs.grad).all()
+
+
+def test_direct_packed_activation_supports_a_scalar():
+    mine = torch.tensor(-0.4, requires_grad=True)
+    theirs = mine.detach().clone().requires_grad_(True)
+    ours = qnn.softplus(mine)
+    reference = F.softplus(theirs)
+    ours.backward()
+    reference.backward()
+    assert torch.equal(ours, reference)
+    assert torch.allclose(mine.grad, theirs.grad, rtol=1e-2, atol=1e-3)
 
 
 def test_patched_gelu_does_not_call_itself():

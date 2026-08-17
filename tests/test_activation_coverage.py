@@ -128,7 +128,9 @@ def test_it_actually_retains_less(name, reference, ours, kwargs, tolerance):
     separately.
     """
 
-    x = torch.randn(256, 512, requires_grad=True)
+    source = nn.Sequential(nn.Linear(512, 512, bias=False))
+    qste.convert(source, activations=False)
+    x = source(torch.randn(256, 512, requires_grad=True))
 
     def retained(context):
         seen: dict[int, int] = {}

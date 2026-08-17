@@ -14,6 +14,7 @@ from torch import Tensor
 
 from .config import QSTEConfig, coerce_config
 from .functional import qste_embedding, qste_linear, qste_weight
+from .nn import _mark_activation_input
 from .surface import Surface
 
 
@@ -57,7 +58,7 @@ class QSTELinear(nn.Module):
         return qste_weight(self.surface)
 
     def forward(self, inputs: Tensor) -> Tensor:
-        return qste_linear(inputs, self.surface, self.bias)
+        return _mark_activation_input(qste_linear(inputs, self.surface, self.bias))
 
     def extra_repr(self) -> str:
         return (
@@ -90,7 +91,7 @@ class QSTEEmbedding(nn.Module):
         return qste_weight(self.surface)
 
     def forward(self, ids: Tensor) -> Tensor:
-        return qste_embedding(ids, self.surface)
+        return _mark_activation_input(qste_embedding(ids, self.surface))
 
     def extra_repr(self) -> str:
         return f"num_embeddings={self.num_embeddings}, embedding_dim={self.embedding_dim}"
